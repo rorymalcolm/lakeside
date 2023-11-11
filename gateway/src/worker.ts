@@ -8,6 +8,8 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+import { v4 } from 'uuid';
+
 export interface Env {
   // Example binding to KV. Learn more at https://developers.cloudflare.com/workers/runtime-apis/kv/
   // MY_KV_NAMESPACE: KVNamespace;
@@ -23,10 +25,26 @@ export interface Env {
   //
   // Example binding to a Queue. Learn more at https://developers.cloudflare.com/queues/javascript-apis/
   // MY_QUEUE: Queue;
+
+  LAKESIDE_BUCKET: R2Bucket;
 }
+
+type AppendBody = {
+  body: string;
+};
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    return new Response('Hello World!');
+    if (request.method === 'PUT') {
+      const json = await request.json<AppendBody>();
+      const currentPrefix = `data/order_ts_hour=${new Date().toISOString().slice(0, 13)}`;
+      const putOperation = await env.LAKESIDE_BUCKET.put(`${currentPrefix}/${v4()}.json`, JSON.stringify(json));
+      if (putOperation) {
+        return new Response('OK');
+      } else {
+        return new Response('FAILED', { status: 500 });
+      }
+    }
+    return new Response();
   },
 };
