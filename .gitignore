@@ -52,3 +52,4 @@ infra/modules/data_pipeline/airbyte_node/scripts/docker.env
 **/*.build.error.log
 
 scripts/extract-rayleighconnect-data/data/*
+**/target/*
