@@ -9,5 +9,6 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-parquet = { version = "48.0.0", features = [], default-features = false }
+parquet = { version = "48.0.0", features = ["arrow", "json", "flate2"], default-features = false }
+rust-s3 = { version = "0.33.0", features = ["sync"], default-features = false }
 wasm-bindgen = "0.2.74"
