@@ -209,7 +209,7 @@ const safeParse = (json: string) => {
   } catch (e) {
     return {
       success: false,
-      error: e,
+      error: "Unable to parse JSON",
     };
   }
 };
