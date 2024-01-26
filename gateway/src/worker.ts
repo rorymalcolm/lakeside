@@ -8,9 +8,7 @@ export interface Env {
   LAKESIDE_BUCKET: R2Bucket;
 }
 
-const AppendBody = z.object({
-  body: z.string(),
-});
+const AppendBody = z.string({});
 
 type AppendBody = z.infer<typeof AppendBody>;
 
@@ -53,31 +51,23 @@ export default {
       return ErrorsToResponse(schemaResult.errors);
     }
 
-    console.log('Got schema', schemaResult.value);
-
     try {
       if (request.method === 'PUT') {
-        console.log('Got request', request);
-
         const json = await request.json();
-
-        console.log('Got json', json);
 
         const validJson = AppendBody.safeParse(json);
         if (!validJson.success) {
           return new Response(JSON.stringify(validJson.error), { status: 400 });
         }
-        console.log('Got valid json', validJson);
-        const validated = validateJSONAgainstSchema(validJson.data.body, schemaResult.value);
 
+        const validated = validateJSONAgainstSchema(validJson.data, schemaResult.value);
         if (!validated.success) {
           return new Response(JSON.stringify(validated.errors), { status: 400 });
         }
 
-        console.log('Got validated', validated);
         const currentPrefix = `data/order_ts_hour=${new Date().toISOString().slice(0, 13)}`;
+
         const putOperation = await env.LAKESIDE_BUCKET.put(`${currentPrefix}/${v4()}.json`, JSON.stringify(json));
-        console.log('Got put operation', putOperation);
         if (putOperation) {
           return new Response('OK');
         } else {
