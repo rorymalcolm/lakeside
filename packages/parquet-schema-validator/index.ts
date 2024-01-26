@@ -105,7 +105,7 @@ function validateJSONFieldAgainstSchmea(
         }
         break;
       case "DATE":
-        if (typeof JSONValue !== "string" && !isNaN(Date.parse(JSONValue))) {
+        if (typeof JSONValue !== "string" || isNaN(Date.parse(JSONValue))) {
           errors.push(`Field ${key} is not a date`);
         }
         break;
