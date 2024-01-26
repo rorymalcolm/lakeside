@@ -1,4 +1,5 @@
 import { ParquetSchema, ParquetSchemaUpdateRequest } from 'parquet-types';
+import { ErrorsToResponse, SafeJSONParse } from 'rerrors';
 
 export interface Env {
   LAKESIDE_BUCKET: R2Bucket;
@@ -11,8 +12,11 @@ async function processGETSchema(env: Env) {
   }
 
   const schemaText = await schema?.text();
-  const schemaJSON = JSON.parse(schemaText);
-  const parseResult = ParquetSchema.safeParse(schemaJSON);
+  const schemaJSON = SafeJSONParse(schemaText);
+  if (!schemaJSON.success) {
+    return ErrorsToResponse(schemaJSON.errors);
+  }
+  const parseResult = ParquetSchema.safeParse(schemaJSON.value);
 
   if (parseResult.success) {
     return new Response(JSON.stringify({ schema: parseResult.data }));

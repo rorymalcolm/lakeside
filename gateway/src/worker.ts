@@ -1,15 +1,18 @@
 import { v4 } from 'uuid';
 import { validateJSONAgainstSchema } from 'parquet-schema-validator';
 import { ParquetSchema } from 'parquet-types';
-import { ValueResult, ErrorsToResponse } from 'rerrors';
+import { ValueResult, ErrorsToResponse, SafeJSONParse } from 'rerrors';
+import { z } from 'zod';
 
 export interface Env {
   LAKESIDE_BUCKET: R2Bucket;
 }
 
-type AppendBody = {
-  body: string;
-};
+const AppendBody = z.object({
+  body: z.string(),
+});
+
+type AppendBody = z.infer<typeof AppendBody>;
 
 const getSchema = async (env: Env): Promise<ValueResult<ParquetSchema>> => {
   const schema = await env.LAKESIDE_BUCKET.get(`schema/schema.json`);
@@ -21,8 +24,14 @@ const getSchema = async (env: Env): Promise<ValueResult<ParquetSchema>> => {
   }
 
   const schemaText = await schema?.text();
-  const schemaJSON = JSON.parse(schemaText);
-  const parseResult = ParquetSchema.safeParse(schemaJSON);
+  const schemaJSON = SafeJSONParse(schemaText);
+  if (!schemaJSON.success) {
+    return {
+      success: false,
+      errors: ['Schema is not valid JSON'],
+    };
+  }
+  const parseResult = ParquetSchema.safeParse(schemaJSON.value);
 
   if (parseResult.success) {
     return {
@@ -44,19 +53,31 @@ export default {
       return ErrorsToResponse(schemaResult.errors);
     }
 
+    console.log('Got schema', schemaResult.value);
+
     try {
       if (request.method === 'PUT') {
-        const json = await request.json<AppendBody>();
+        console.log('Got request', request);
 
-        const validated = validateJSONAgainstSchema(json.body, schemaResult.value);
+        const json = await request.json();
+
+        console.log('Got json', json);
+
+        const validJson = AppendBody.safeParse(json);
+        if (!validJson.success) {
+          return new Response(JSON.stringify(validJson.error), { status: 400 });
+        }
+        console.log('Got valid json', validJson);
+        const validated = validateJSONAgainstSchema(validJson.data.body, schemaResult.value);
 
         if (!validated.success) {
           return new Response(JSON.stringify(validated.errors), { status: 400 });
         }
 
+        console.log('Got validated', validated);
         const currentPrefix = `data/order_ts_hour=${new Date().toISOString().slice(0, 13)}`;
         const putOperation = await env.LAKESIDE_BUCKET.put(`${currentPrefix}/${v4()}.json`, JSON.stringify(json));
-
+        console.log('Got put operation', putOperation);
         if (putOperation) {
           return new Response('OK');
         } else {
