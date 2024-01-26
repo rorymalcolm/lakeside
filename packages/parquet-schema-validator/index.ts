@@ -1,5 +1,19 @@
 import { ParquetField, ParquetSchema } from "parquet-types";
 
+const safeParse = (json: string) => {
+  try {
+    return {
+      success: true,
+      data: JSON.parse(json),
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: "Unable to parse JSON",
+    };
+  }
+};
+
 function validateJSONFieldAgainstSchmea(
   key: string,
   JSONValue: string,
@@ -199,17 +213,3 @@ export function validateJSONAgainstSchema(
     success: true,
   };
 }
-
-const safeParse = (json: string) => {
-  try {
-    return {
-      success: true,
-      data: JSON.parse(json),
-    };
-  } catch (e) {
-    return {
-      success: false,
-      error: "Unable to parse JSON",
-    };
-  }
-};
