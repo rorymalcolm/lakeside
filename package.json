@@ -10,5 +10,8 @@
   },
   "installConfig": {
     "hoistingLimits": "workspaces"
+  },
+  "scripts": {
+    "deploy": "deno run --allow-read --allow-net --allow-run scripts/deploy.ts"
   }
 }

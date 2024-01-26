@@ -1,3 +1,4 @@
 {
-  "rust-analyzer.linkedProjects": ["./parquet-generator/Cargo.toml"]
+  "rust-analyzer.linkedProjects": ["./parquet-generator/Cargo.toml"],
+  "deno.enablePaths": ["./scripts"]
 }
