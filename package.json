@@ -1,0 +1,13 @@
+{
+  "name": "core",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "gateway",
+      "schema-manager"
+    ]
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  }
+}
