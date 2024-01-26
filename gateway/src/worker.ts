@@ -29,8 +29,8 @@ const getSchema = async (env: Env): Promise<ValueResult<ParquetSchema>> => {
       errors: ['Schema is not valid JSON'],
     };
   }
-  const parseResult = ParquetSchema.safeParse(schemaJSON.value);
 
+  const parseResult = ParquetSchema.safeParse(schemaJSON.value);
   if (parseResult.success) {
     return {
       success: true,

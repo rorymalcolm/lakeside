@@ -111,6 +111,7 @@ fn physical_type_matcher(parquet_primitive_type: ParquetPrimitiveType) -> Physic
 fn build_schema(schema: String) -> String {
     let schema = serde_json::from_str::<ParquetSchema>(schema.as_str()).unwrap();
     let mut type_vec: Vec<Arc<Type>> = vec![];
+
     for field in schema.fields {
         let type_builder = Type::primitive_type_builder(
             field.name.as_str(),
@@ -133,28 +134,32 @@ fn build_schema(schema: String) -> String {
         let converted_type = type_builder.build().unwrap();
         type_vec.push(Arc::new(converted_type));
     }
+
     let mut buf = Vec::new();
+
     let schema = Type::group_type_builder("schema")
         .with_fields(type_vec)
         .build()
         .unwrap();
     printer::print_schema(&mut buf, &schema);
-    let string_schema = String::from_utf8(buf).unwrap();
-    string_schema
+
+    String::from_utf8(buf).unwrap()
 }
 
 #[wasm_bindgen]
 pub fn generate_parquet(schema: String, fields: Vec<String>) -> Result<(), JsValue> {
     let message_type = build_schema(schema);
+    let schema = Arc::new(parse_message_type(message_type.as_str()).unwrap());
 
     let buffer = vec![];
-    let schema = Arc::new(parse_message_type(message_type.as_str()).unwrap());
+
     let mut writer = SerializedFileWriter::new(buffer, schema, Default::default()).unwrap();
     let mut row_group_writer = writer.next_row_group().unwrap();
+
     while let Some(col_writer) = row_group_writer.next_column().unwrap() {
-        // ... write values to a column writer
         col_writer.close().unwrap()
     }
+
     row_group_writer.close().unwrap();
     writer.close().unwrap();
 

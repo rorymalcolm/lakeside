@@ -16,8 +16,8 @@ async function processGETSchema(env: Env) {
   if (!schemaJSON.success) {
     return ErrorsToResponse(schemaJSON.errors);
   }
-  const parseResult = ParquetSchema.safeParse(schemaJSON.value);
 
+  const parseResult = ParquetSchema.safeParse(schemaJSON.value);
   if (parseResult.success) {
     return new Response(JSON.stringify({ schema: parseResult.data }));
   }
