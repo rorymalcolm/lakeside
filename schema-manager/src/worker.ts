@@ -8,6 +8,9 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method === 'GET') {
       const schema = await env.LAKESIDE_BUCKET.get(`schema/schema.json`);
+      if (!schema) {
+        return new Response('', { status: 404 });
+      }
       const schemaJson = await schema?.text();
       const parseResult = ParquetSchema.safeParse(JSON.stringify(schemaJson));
       if (parseResult.success) {
