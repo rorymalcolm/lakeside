@@ -1,11 +1,9 @@
-mod schema_builder;
-
 use parquet::basic::{ConvertedType, Repetition, Type as PhysicalType};
 use parquet::schema::printer;
 use parquet::schema::types::Type;
 use parquet::{file::writer::SerializedFileWriter, schema::parser::parse_message_type};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path, sync::Arc};
+use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -19,10 +17,10 @@ struct ParquetField {
     #[serde(rename = "type")]
     primitive_type: ParquetPrimitiveType,
     logical_type: Option<ParquetLogicalType>,
-    repetition_type: ParquetRepetition,
+    repetition_type: Option<ParquetRepetition>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 enum ParquetPrimitiveType {
     Boolean,
@@ -94,7 +92,6 @@ fn logical_type_matcher(parquet_logical_type: ParquetLogicalType) -> ConvertedTy
         ParquetLogicalType::Json => ConvertedType::JSON,
         ParquetLogicalType::Bson => ConvertedType::BSON,
         ParquetLogicalType::Interval => ConvertedType::INTERVAL,
-        _ => ConvertedType::NONE,
     }
 }
 
@@ -111,8 +108,8 @@ fn physical_type_matcher(parquet_primitive_type: ParquetPrimitiveType) -> Physic
     }
 }
 
-fn build_schema(schema: &str) -> String {
-    let schema = serde_json::from_str::<ParquetSchema>(schema).unwrap();
+fn build_schema(schema: String) -> String {
+    let schema = serde_json::from_str::<ParquetSchema>(schema.as_str()).unwrap();
     let mut type_vec: Vec<Arc<Type>> = vec![];
     for field in schema.fields {
         let type_builder = Type::primitive_type_builder(
@@ -120,9 +117,14 @@ fn build_schema(schema: &str) -> String {
             physical_type_matcher(field.primitive_type),
         )
         .with_repetition(match field.repetition_type {
-            ParquetRepetition::Required => Repetition::REQUIRED,
-            ParquetRepetition::Optional => Repetition::OPTIONAL,
-            ParquetRepetition::Repeated => Repetition::REPEATED,
+            Some(ParquetRepetition::Required) => Repetition::REQUIRED,
+            Some(ParquetRepetition::Optional) => Repetition::OPTIONAL,
+            Some(ParquetRepetition::Repeated) => Repetition::REPEATED,
+            None => Repetition::REQUIRED,
+        })
+        .with_length(match field.primitive_type {
+            ParquetPrimitiveType::FixedLenByteArray => 16,
+            _ => 0,
         })
         .with_converted_type(match field.logical_type {
             Some(logical_type) => logical_type_matcher(logical_type),
@@ -142,26 +144,51 @@ fn build_schema(schema: &str) -> String {
 }
 
 #[wasm_bindgen]
-pub fn generate_parquet() -> Result<(), JsValue> {
-    let path = Path::new("/path/to/sample.parquet");
+pub fn generate_parquet(schema: String, fields: Vec<String>) -> Result<(), JsValue> {
+    let message_type = build_schema(schema);
 
-    let message_type = "
-  message schema {
-    REQUIRED INT32 b;
-  }
-";
-    let schema = Arc::new(parse_message_type(message_type).unwrap());
-    let file = fs::File::create(&path).unwrap();
-    let mut writer = SerializedFileWriter::new(file, schema, Default::default()).unwrap();
+    let buffer = vec![];
+    let schema = Arc::new(parse_message_type(message_type.as_str()).unwrap());
+    let mut writer = SerializedFileWriter::new(buffer, schema, Default::default()).unwrap();
     let mut row_group_writer = writer.next_row_group().unwrap();
-    while let Some(mut col_writer) = row_group_writer.next_column().unwrap() {
+    while let Some(col_writer) = row_group_writer.next_column().unwrap() {
         // ... write values to a column writer
         col_writer.close().unwrap()
     }
     row_group_writer.close().unwrap();
     writer.close().unwrap();
 
-    let bytes = fs::read(&path).unwrap();
-    assert_eq!(&bytes[0..4], &[b'P', b'A', b'R', b'1']);
     Ok(())
+}
+
+#[test]
+fn test_build_schema() {
+    let schema = r#"
+    {
+        "fields": [
+            {
+                "name": "id",
+                "type": "INT32"
+            },
+            {
+                "name": "name",
+                "type": "BYTE_ARRAY",
+                "logical_type": "UTF8"
+            },
+            {
+                "name": "age",
+                "type": "INT32"
+            },
+            {
+                "name": "is_active",
+                "type": "BOOLEAN"
+            }
+        ]
+    }
+    "#;
+    let schema = build_schema(schema.to_string());
+    assert_eq!(
+        schema,
+        "message schema {\n  REQUIRED INT32 id;\n  REQUIRED BYTE_ARRAY name (UTF8);\n  REQUIRED INT32 age;\n  REQUIRED BOOLEAN is_active;\n}\n"
+    );
 }
