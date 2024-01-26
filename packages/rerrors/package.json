@@ -1,0 +1,12 @@
+{
+  "name": "rerrors",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {},
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20230419.0",
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.0.4",
+    "wrangler": "^3.0.0"
+  }
+}

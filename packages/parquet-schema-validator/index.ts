@@ -1,4 +1,5 @@
 import { ParquetField, ParquetSchema } from "parquet-types";
+import { Result } from "rerrors";
 
 const safeParse = (json: string) => {
   try {
@@ -18,14 +19,7 @@ function validateJSONFieldAgainstSchmea(
   key: string,
   JSONValue: string,
   field: ParquetField
-):
-  | {
-      success: true;
-    }
-  | {
-      success: false;
-      errors: string[];
-    } {
+): Result {
   const errors: string[] = [];
   switch (field.type) {
     case "BOOLEAN":
@@ -159,14 +153,7 @@ function validateJSONFieldAgainstSchmea(
 export function validateJSONAgainstSchema(
   json: string,
   schema: ParquetSchema
-):
-  | {
-      success: false;
-      errors: string[];
-    }
-  | {
-      success: true;
-    } {
+): Result {
   const parsedJSON = safeParse(json);
   if (!parsedJSON.success) {
     return {
