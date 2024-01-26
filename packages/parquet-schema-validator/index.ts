@@ -1,50 +1,46 @@
-import { ParquetField, ParquetSchema } from "parquet-types";
-import { Result, SafeJSONParse } from "rerrors";
+import { ParquetField, ParquetSchema } from 'parquet-types';
+import { Result, SafeJSONParse } from 'rerrors';
 
-function validateJSONFieldAgainstSchmea(
-  key: string,
-  JSONValue: string,
-  field: ParquetField
-): Result {
+function validateJSONFieldAgainstSchmea(key: string, JSONValue: string, field: ParquetField): Result {
   const errors: string[] = [];
   switch (field.type) {
-    case "BOOLEAN":
-      if (JSONValue !== "true" && JSONValue !== "false") {
+    case 'BOOLEAN':
+      if (JSONValue !== 'true' && JSONValue !== 'false') {
         errors.push(`Field ${key} is not a boolean`);
       }
       break;
-    case "INT32":
+    case 'INT32':
       if (!Number.isInteger(Number(JSONValue))) {
         errors.push(`Field ${key} is not an integer`);
       }
       break;
-    case "INT64":
+    case 'INT64':
       if (!Number.isInteger(Number(JSONValue))) {
         errors.push(`Field ${key} is not an integer`);
       }
       break;
-    case "INT96":
+    case 'INT96':
       if (!Number.isInteger(Number(JSONValue))) {
         errors.push(`Field ${key} is not an integer`);
       }
       break;
-    case "FLOAT":
+    case 'FLOAT':
       if (isNaN(Number(JSONValue))) {
         errors.push(`Field ${key} is not a float`);
       }
       break;
-    case "DOUBLE":
+    case 'DOUBLE':
       if (isNaN(Number(JSONValue))) {
         errors.push(`Field ${key} is not a double`);
       }
       break;
-    case "BYTE_ARRAY":
-      if (typeof JSONValue !== "string") {
+    case 'BYTE_ARRAY':
+      if (typeof JSONValue !== 'string') {
         errors.push(`Field ${key} is not a string`);
       }
       break;
-    case "FIXED_LEN_BYTE_ARRAY":
-      if (typeof JSONValue !== "string") {
+    case 'FIXED_LEN_BYTE_ARRAY':
+      if (typeof JSONValue !== 'string') {
         errors.push(`Field ${key} is not a string`);
       }
       break;
@@ -54,72 +50,72 @@ function validateJSONFieldAgainstSchmea(
 
   if (field.logicalType) {
     switch (field.logicalType) {
-      case "UTF8":
-        if (typeof JSONValue !== "string") {
+      case 'UTF8':
+        if (typeof JSONValue !== 'string') {
           errors.push(`Field ${key} is not a string`);
         }
         break;
-      case "MAP":
-        if (typeof JSONValue !== "object") {
+      case 'MAP':
+        if (typeof JSONValue !== 'object') {
           errors.push(`Field ${key} is not an object`);
         }
         break;
-      case "MAP_KEY_VALUE":
-        if (typeof JSONValue !== "object") {
+      case 'MAP_KEY_VALUE':
+        if (typeof JSONValue !== 'object') {
           errors.push(`Field ${key} is not an object`);
         }
         break;
-      case "LIST":
+      case 'LIST':
         if (!Array.isArray(JSONValue)) {
           errors.push(`Field ${key} is not an array`);
         }
         break;
-      case "ENUM":
-        if (typeof JSONValue !== "string") {
+      case 'ENUM':
+        if (typeof JSONValue !== 'string') {
           errors.push(`Field ${key} is not a string`);
         }
         break;
-      case "DECIMAL":
-        if (typeof JSONValue !== "string") {
+      case 'DECIMAL':
+        if (typeof JSONValue !== 'string') {
           errors.push(`Field ${key} is not a string decimal`);
         }
         break;
-      case "DATE":
-        if (typeof JSONValue !== "string" || isNaN(Date.parse(JSONValue))) {
+      case 'DATE':
+        if (typeof JSONValue !== 'string' || isNaN(Date.parse(JSONValue))) {
           errors.push(`Field ${key} is not a date`);
         }
         break;
-      case "TIME_MILLIS":
+      case 'TIME_MILLIS':
         if (!Number.isInteger(Number(JSONValue))) {
           errors.push(`Field ${key} is not an integer`);
         }
         break;
-      case "TIME_MICROS":
+      case 'TIME_MICROS':
         if (!Number.isInteger(Number(JSONValue))) {
           errors.push(`Field ${key} is not an integer`);
         }
         break;
-      case "TIMESTAMP_MILLIS":
+      case 'TIMESTAMP_MILLIS':
         if (!Number.isInteger(Number(JSONValue))) {
           errors.push(`Field ${key} is not an integer`);
         }
         break;
-      case "TIMESTAMP_MICROS":
+      case 'TIMESTAMP_MICROS':
         if (!Number.isInteger(Number(JSONValue))) {
           errors.push(`Field ${key} is not an integer`);
         }
         break;
-      case "UINT_8":
+      case 'UINT_8':
         if (!Number.isInteger(Number(JSONValue))) {
           errors.push(`Field ${key} is not an integer`);
         }
         break;
-      case "UINT_16":
+      case 'UINT_16':
         if (!Number.isInteger(Number(JSONValue))) {
           errors.push(`Field ${key} is not an integer`);
         }
         break;
-      case "UINT_32":
+      case 'UINT_32':
         if (!Number.isInteger(Number(JSONValue))) {
           errors.push(`Field ${key} is not an integer`);
         }
@@ -136,15 +132,12 @@ function validateJSONFieldAgainstSchmea(
   };
 }
 
-export function validateJSONAgainstSchema(
-  json: string,
-  schema: ParquetSchema
-): Result {
+export function validateJSONAgainstSchema(json: string, schema: ParquetSchema): Result {
   const parsedJSON = SafeJSONParse(json);
   if (!parsedJSON.success) {
     return {
       success: false,
-      errors: ["JSON is not valid JSON"],
+      errors: ['JSON is not valid JSON'],
     };
   }
 
@@ -159,11 +152,7 @@ export function validateJSONAgainstSchema(
         errors,
       };
     }
-    const validated = validateJSONFieldAgainstSchmea(
-      field.name,
-      parsedJSON.value[field.name],
-      field
-    );
+    const validated = validateJSONFieldAgainstSchmea(field.name, parsedJSON.value[field.name], field);
     if (validated.success === false) {
       return validated;
     }
