@@ -1,19 +1,5 @@
 import { ParquetField, ParquetSchema } from "parquet-types";
-import { Result } from "rerrors";
-
-const safeParse = (json: string) => {
-  try {
-    return {
-      success: true,
-      data: JSON.parse(json),
-    };
-  } catch (e) {
-    return {
-      success: false,
-      error: "Unable to parse JSON",
-    };
-  }
-};
+import { Result, SafeJSONParse } from "rerrors";
 
 function validateJSONFieldAgainstSchmea(
   key: string,
@@ -154,7 +140,7 @@ export function validateJSONAgainstSchema(
   json: string,
   schema: ParquetSchema
 ): Result {
-  const parsedJSON = safeParse(json);
+  const parsedJSON = SafeJSONParse(json);
   if (!parsedJSON.success) {
     return {
       success: false,
@@ -164,7 +150,7 @@ export function validateJSONAgainstSchema(
 
   for (const field of schema.fields) {
     const errors = [];
-    if (!parsedJSON.data[field.name]) {
+    if (!parsedJSON.value[field.name]) {
       errors.push(`Missing field ${field.name}`);
     }
     if (errors.length > 0) {
@@ -175,7 +161,7 @@ export function validateJSONAgainstSchema(
     }
     const validated = validateJSONFieldAgainstSchmea(
       field.name,
-      parsedJSON.data[field.name],
+      parsedJSON.value[field.name],
       field
     );
     if (validated.success === false) {
@@ -183,7 +169,7 @@ export function validateJSONAgainstSchema(
     }
   }
 
-  for (const key of Object.keys(parsedJSON.data)) {
+  for (const key of Object.keys(parsedJSON.value)) {
     const errors = [];
     if (!schema.fields.find((field) => field.name === key)) {
       errors.push(`Unknown field ${key}`);

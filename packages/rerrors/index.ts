@@ -8,6 +8,8 @@ export type ValueResult<T> =
       errors: string[];
     };
 
+export type AnyValueResult = ValueResult<any>;
+
 export type Result =
   | {
       success: true;
@@ -18,5 +20,19 @@ export type Result =
     };
 
 export const ErrorsToResponse = (errors: string[]): Response => {
-  return new Response(errors.join(", "), { status: 400 });
+  return new Response(errors.join(', '), { status: 400 });
+};
+
+export const SafeJSONParse = (json: string): AnyValueResult => {
+  try {
+    return {
+      success: true,
+      value: JSON.parse(json),
+    };
+  } catch (e) {
+    return {
+      success: false,
+      errors: ['Unable to parse JSON'],
+    };
+  }
 };
