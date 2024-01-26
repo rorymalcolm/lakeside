@@ -6,6 +6,9 @@
     "deploy": "wrangler publish",
     "start": "wrangler dev"
   },
+  "dependencies": {
+    "parquet-types": "0.0.0"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230419.0",
     "@types/uuid": "^9.0.7",
