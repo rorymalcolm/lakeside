@@ -45,15 +45,17 @@ const ParquetLogicalType = z.enum([
 
 type ParquetLogicalType = z.infer<typeof ParquetLogicalType>;
 
+export const ParquetField = z.object({
+  name: z.string(),
+  type: ParquetPrimitiveType,
+  logicalType: ParquetLogicalType.optional(),
+  repetitionType: ParquetRepetitionType.optional(),
+});
+
+export type ParquetField = z.infer<typeof ParquetField>;
+
 export const ParquetSchema = z.object({
-  fields: z.array(
-    z.object({
-      name: z.string(),
-      type: ParquetPrimitiveType,
-      logicalType: ParquetLogicalType.optional(),
-      repetitionType: ParquetRepetitionType.optional(),
-    })
-  ),
+  fields: z.array(ParquetField),
 });
 
 export type ParquetSchema = z.infer<typeof ParquetSchema>;

@@ -5,7 +5,8 @@
     "packages": [
       "gateway",
       "schema-manager",
-      "packages/parquet-types"
+      "packages/parquet-types",
+      "packages/parquet-schema-validator"
     ]
   },
   "installConfig": {
