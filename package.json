@@ -16,6 +16,8 @@
   },
   "scripts": {
     "deploy": "deno run --allow-read --allow-net --allow-run scripts/deploy.ts",
-    "test": "vitest"
+    "test": "vitest",
+    "build:wasm": "wasm-pack build parquet-generator/ --out-dir parquet-generator/pkg/",
+    "build": "npm run build:wasm"
   }
 }
