@@ -5,6 +5,7 @@ use parquet::{file::writer::SerializedFileWriter, schema::parser::parse_message_
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::Clamped;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ParquetSchema {
@@ -124,7 +125,7 @@ fn build_schema(schema: String) -> String {
             None => Repetition::REQUIRED,
         })
         .with_length(match field.primitive_type {
-            ParquetPrimitiveType::FixedLenByteArray => 16,
+            ParquetPrimitiveType::FixedLenByteArray => 1024,
             _ => 0,
         })
         .with_converted_type(match field.logical_type {
@@ -146,28 +147,64 @@ fn build_schema(schema: String) -> String {
     String::from_utf8(buf).unwrap()
 }
 
+/// Generate a parquet file from a schema and a list of files which are JSON strings
+/// that match the schema
+///
+/// # Arguments
+///
+/// * `schema`: A JSON representation of the schema, which is then parsed into a parquet schema
+/// * `files`: A list of strings of JSON objects that match the schema
+///
+/// returns: Result<Clamped<Vec<u8, Global>>, JsValue>
+///    A result that contains a Clamped<Vec<u8>> if successful, or a JsValue if not
+///    The Clamped<Vec<u8>> is the parquet file as a byte array, in JavaScript it's a Uint8Array
+///    The JsValue is an error message
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
 #[wasm_bindgen]
-pub fn generate_parquet(schema: String, fields: Vec<String>) -> Result<(), JsValue> {
+pub fn generate_parquet(schema: String, files: Vec<String>) -> Result<Clamped<Vec<u8>>, JsValue> {
     let message_type = build_schema(schema);
-    let schema = Arc::new(parse_message_type(message_type.as_str()).unwrap());
+    let parsed_schema = parse_message_type(message_type.as_str());
+
+    let schema = match parsed_schema {
+        Ok(s) => Arc::new(s),
+        Err(_) => return Err(JsValue::from_str("Error parsing schema")),
+    };
 
     let buffer = vec![];
 
-    let mut writer = SerializedFileWriter::new(buffer, schema, Default::default()).unwrap();
-    let mut row_group_writer = writer.next_row_group().unwrap();
+    let mut writer = match SerializedFileWriter::new(buffer, schema, Default::default()) {
+        Ok(w) => w,
+        Err(_) => return Err(JsValue::from_str("Error creating writer")),
+    };
 
-    while let Some(col_writer) = row_group_writer.next_column().unwrap() {
-        col_writer.close().unwrap()
+    let mut row_group_writer = match writer.next_row_group() {
+        Ok(rgw) => rgw,
+        Err(_) => return Err(JsValue::from_str("Error creating row group writer")),
+    };
+
+    while let Ok(Some(col_writer)) = row_group_writer.next_column() {
+        if col_writer.close().is_err() {
+            return Err(JsValue::from_str("Error closing column writer"));
+        }
     }
 
-    row_group_writer.close().unwrap();
-    writer.close().unwrap();
+    if row_group_writer.close().is_err() {
+        return Err(JsValue::from_str("Error closing row group writer"));
+    }
 
-    Ok(())
+    return match writer.into_inner() {
+        Ok(bytes_buffer) => Ok(Clamped(bytes_buffer)),
+        Err(_) => Err(JsValue::from_str("Error closing writer")),
+    };
 }
 
 #[test]
-fn test_build_schema() {
+fn test_build_schema_basic() {
     let schema = r#"
     {
         "fields": [

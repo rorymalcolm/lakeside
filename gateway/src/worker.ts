@@ -3,6 +3,7 @@ import { validateJSONAgainstSchema } from 'parquet-schema-validator';
 import { ParquetSchema } from 'parquet-types';
 import { ValueResult, ErrorsToResponse, SafeJSONParse } from 'rerrors';
 import { z } from 'zod';
+import { generate_parquet } from 'parquet-generator';
 
 export interface Env {
   LAKESIDE_BUCKET: R2Bucket;
