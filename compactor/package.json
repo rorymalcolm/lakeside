@@ -16,6 +16,6 @@
   },
   "dependencies": {
     "parquet-schema-validator": "0.0.0",
-    "parquet-generator": "0.1.0",
+    "parquet-generator": "0.1.0"
   }
 }
