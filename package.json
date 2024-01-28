@@ -21,5 +21,8 @@
     "test": "vitest",
     "build:wasm": "wasm-pack build parquet-generator/ --out-dir ./pkg",
     "build": "npm run build:wasm"
+  },
+  "devDependencies": {
+    "esbuild": "0.20.0"
   }
 }
