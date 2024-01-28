@@ -5,6 +5,8 @@
     "packages": [
       "gateway",
       "schema-manager",
+      "wasm-test",
+      "wasm-test-rs/pkg",
       "packages/parquet-types",
       "packages/parquet-schema-validator",
       "packages/rerrors",
