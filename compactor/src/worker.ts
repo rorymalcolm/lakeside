@@ -38,51 +38,6 @@ const getSchema = async (env: Env): Promise<ValueResult<ParquetSchema>> => {
   };
 };
 
-const getFiles = async (env: Env): Promise<ValueResult<string[]>> => {
-  const files = await env.LAKESIDE_BUCKET.list({ prefix: 'data/' });
-  if (!files) {
-    return {
-      success: false,
-      errors: ['No files'],
-    };
-  }
-
-  const errors: string[] = [];
-  const fileTexts = await Promise.all(files.objects.map(async (f) => {
-    const obj = await env.LAKESIDE_BUCKET.get(f.key)
-    const objText = await obj?.text();
-    if (!objText) {
-      errors.push(`No text for ${f.key}`);
-    }
-    return objText;
-  }));
-
-  if (errors.length > 0) {
-    return {
-      success: false,
-      errors,
-    };
-  }
-
-  const fileJSONs = (fileTexts as string[]).map(SafeJSONParse);
-  const fileJSONErrors = fileJSONs.filter((r) => !r.success);
-  if (fileJSONErrors.length > 0) {
-    return {
-      success: false,
-      errors: fileJSONErrors.map((e) => !e.success ?
-        e.errors.map((e) => JSON.stringify(e)).join(', ') : ""
-      ).flat(),
-    };
-  }
-
-  const fileJSONValues = fileJSONs.map((r) =>
-    r.success ? JSON.stringify(r.value) : undefined).filter((v) => v !== undefined) as string[];
-  return {
-    success: true,
-    value: fileJSONValues,
-  }
-}
-
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const schemaResult = await getSchema(env);
@@ -92,17 +47,46 @@ export default {
 
     try {
       if (request.method === 'POST') {
-        const filesResult = await getFiles(env);
-        if (!filesResult.success) {
-          return ErrorsToResponse(filesResult.errors);
-        }
-
-        // Get list of files before compaction for cleanup
+        // List files ONCE and snapshot the keys
         const filesList = await env.LAKESIDE_BUCKET.list({ prefix: 'data/' });
         const fileKeys = filesList.objects.map(obj => obj.key);
 
+        if (fileKeys.length === 0) {
+          return new Response('No files to compact', { status: 200 });
+        }
+
+        // Read ONLY the files we listed (prevents race with new writes)
+        const errors: string[] = [];
+        const fileTexts: string[] = [];
+
+        for (const key of fileKeys) {
+          const obj = await env.LAKESIDE_BUCKET.get(key);
+          const objText = await obj?.text();
+          if (!objText) {
+            errors.push(`No text for ${key}`);
+          } else {
+            fileTexts.push(objText);
+          }
+        }
+
+        if (errors.length > 0) {
+          return ErrorsToResponse(errors);
+        }
+
+        // Parse JSON strings
+        const fileJSONs = fileTexts.map(SafeJSONParse);
+        const fileJSONErrors = fileJSONs.filter((r) => !r.success);
+        if (fileJSONErrors.length > 0) {
+          return ErrorsToResponse(
+            fileJSONErrors.map((e) => !e.success ? e.errors.map((e) => JSON.stringify(e)).join(', ') : "").flat()
+          );
+        }
+
+        const fileJSONValues = fileJSONs.map((r) =>
+          r.success ? JSON.stringify(r.value) : undefined).filter((v) => v !== undefined) as string[];
+
         // Generate parquet file with timestamp
-        const parquetFile = generateParquet(JSON.stringify(schemaResult.value), filesResult.value);
+        const parquetFile = generateParquet(JSON.stringify(schemaResult.value), fileJSONValues);
         const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
         const parquetKey = `parquet/data-${timestamp}.parquet`;
 
@@ -111,7 +95,8 @@ export default {
           return new Response('Failed to write parquet file', { status: 500 });
         }
 
-        // Cleanup: delete the original JSON files after successful compaction
+        // CRITICAL: Only delete the EXACT files we compacted (from snapshot)
+        // Files written AFTER our snapshot will NOT be deleted
         const deletePromises = fileKeys.map(key => env.LAKESIDE_BUCKET.delete(key));
         await Promise.all(deletePromises);
 

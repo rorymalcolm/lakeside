@@ -3,7 +3,6 @@ use parquet::schema::printer;
 use parquet::schema::types::Type;
 use parquet::{file::writer::SerializedFileWriter, schema::parser::parse_message_type};
 use parquet::column::writer::ColumnWriter;
-use parquet::data_type::{BoolType, Int32Type, Int64Type, FloatType, DoubleType, ByteArrayType};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -208,10 +207,8 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
     };
 
     // Write data column by column
-    let num_records = json_records.len();
-
     for field in &parquet_schema_obj.fields {
-        let col_writer = match row_group_writer.next_column() {
+        let mut col_writer = match row_group_writer.next_column() {
             Ok(Some(writer)) => writer,
             Ok(None) => break,
             Err(_) => return Err(JsValue::from_str("Error getting column writer")),
@@ -222,7 +219,7 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
 
         match field.primitive_type {
             ParquetPrimitiveType::Boolean => {
-                if let ColumnWriter::BoolColumnWriter(mut writer) = col_writer {
+                if let ColumnWriter::BoolColumnWriter(ref mut writer) = col_writer.untyped() {
                     let mut values: Vec<bool> = Vec::new();
                     let mut def_levels: Vec<i16> = Vec::new();
 
@@ -242,13 +239,13 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
                     if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing boolean column"));
                     }
-                    if writer.close().is_err() {
-                        return Err(JsValue::from_str("Error closing boolean column writer"));
-                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing boolean column writer"));
                 }
             }
             ParquetPrimitiveType::Int32 => {
-                if let ColumnWriter::Int32ColumnWriter(mut writer) = col_writer {
+                if let ColumnWriter::Int32ColumnWriter(ref mut writer) = col_writer.untyped() {
                     let mut values: Vec<i32> = Vec::new();
                     let mut def_levels: Vec<i16> = Vec::new();
 
@@ -268,13 +265,13 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
                     if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing int32 column"));
                     }
-                    if writer.close().is_err() {
-                        return Err(JsValue::from_str("Error closing int32 column writer"));
-                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing int32 column writer"));
                 }
             }
             ParquetPrimitiveType::Int64 => {
-                if let ColumnWriter::Int64ColumnWriter(mut writer) = col_writer {
+                if let ColumnWriter::Int64ColumnWriter(ref mut writer) = col_writer.untyped() {
                     let mut values: Vec<i64> = Vec::new();
                     let mut def_levels: Vec<i16> = Vec::new();
 
@@ -294,13 +291,13 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
                     if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing int64 column"));
                     }
-                    if writer.close().is_err() {
-                        return Err(JsValue::from_str("Error closing int64 column writer"));
-                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing int64 column writer"));
                 }
             }
             ParquetPrimitiveType::Float => {
-                if let ColumnWriter::FloatColumnWriter(mut writer) = col_writer {
+                if let ColumnWriter::FloatColumnWriter(ref mut writer) = col_writer.untyped() {
                     let mut values: Vec<f32> = Vec::new();
                     let mut def_levels: Vec<i16> = Vec::new();
 
@@ -320,13 +317,13 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
                     if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing float column"));
                     }
-                    if writer.close().is_err() {
-                        return Err(JsValue::from_str("Error closing float column writer"));
-                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing float column writer"));
                 }
             }
             ParquetPrimitiveType::Double => {
-                if let ColumnWriter::DoubleColumnWriter(mut writer) = col_writer {
+                if let ColumnWriter::DoubleColumnWriter(ref mut writer) = col_writer.untyped() {
                     let mut values: Vec<f64> = Vec::new();
                     let mut def_levels: Vec<i16> = Vec::new();
 
@@ -346,13 +343,13 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
                     if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing double column"));
                     }
-                    if writer.close().is_err() {
-                        return Err(JsValue::from_str("Error closing double column writer"));
-                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing double column writer"));
                 }
             }
             ParquetPrimitiveType::ByteArray | ParquetPrimitiveType::Binary => {
-                if let ColumnWriter::ByteArrayColumnWriter(mut writer) = col_writer {
+                if let ColumnWriter::ByteArrayColumnWriter(ref mut writer) = col_writer.untyped() {
                     let mut values: Vec<ByteArray> = Vec::new();
                     let mut def_levels: Vec<i16> = Vec::new();
 
@@ -372,9 +369,9 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
                     if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing byte array column"));
                     }
-                    if writer.close().is_err() {
-                        return Err(JsValue::from_str("Error closing byte array column writer"));
-                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing byte array column writer"));
                 }
             }
             _ => {
@@ -389,10 +386,10 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
         return Err(JsValue::from_str("Error closing row group writer"));
     }
 
-    return match writer.into_inner() {
+    match writer.into_inner() {
         Ok(bytes_buffer) => Ok(Clamped(bytes_buffer)),
         Err(_) => Err(JsValue::from_str("Error closing writer")),
-    };
+    }
 }
 
 #[test]
