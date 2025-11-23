@@ -208,6 +208,8 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
     };
 
     // Write data column by column
+    let num_records = json_records.len();
+
     for field in &parquet_schema_obj.fields {
         let col_writer = match row_group_writer.next_column() {
             Ok(Some(writer)) => writer,
@@ -215,14 +217,29 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
             Err(_) => return Err(JsValue::from_str("Error getting column writer")),
         };
 
+        // Determine if field is optional (needs definition levels)
+        let is_optional = matches!(field.repetition_type, Some(ParquetRepetition::Optional));
+
         match field.primitive_type {
             ParquetPrimitiveType::Boolean => {
                 if let ColumnWriter::BoolColumnWriter(mut writer) = col_writer {
-                    let values: Vec<bool> = json_records
-                        .iter()
-                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_bool()))
-                        .collect();
-                    if writer.write_batch(&values, None, None).is_err() {
+                    let mut values: Vec<bool> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_bool()) {
+                            values.push(val);
+                            def_levels.push(1); // Value is present
+                        } else if is_optional {
+                            values.push(false); // Placeholder for null
+                            def_levels.push(0); // Value is null
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing boolean column"));
                     }
                     if writer.close().is_err() {
@@ -232,11 +249,23 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
             }
             ParquetPrimitiveType::Int32 => {
                 if let ColumnWriter::Int32ColumnWriter(mut writer) = col_writer {
-                    let values: Vec<i32> = json_records
-                        .iter()
-                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_i64()).map(|v| v as i32))
-                        .collect();
-                    if writer.write_batch(&values, None, None).is_err() {
+                    let mut values: Vec<i32> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_i64()).map(|v| v as i32) {
+                            values.push(val);
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(0);
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing int32 column"));
                     }
                     if writer.close().is_err() {
@@ -246,11 +275,23 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
             }
             ParquetPrimitiveType::Int64 => {
                 if let ColumnWriter::Int64ColumnWriter(mut writer) = col_writer {
-                    let values: Vec<i64> = json_records
-                        .iter()
-                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_i64()))
-                        .collect();
-                    if writer.write_batch(&values, None, None).is_err() {
+                    let mut values: Vec<i64> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_i64()) {
+                            values.push(val);
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(0);
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing int64 column"));
                     }
                     if writer.close().is_err() {
@@ -260,11 +301,23 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
             }
             ParquetPrimitiveType::Float => {
                 if let ColumnWriter::FloatColumnWriter(mut writer) = col_writer {
-                    let values: Vec<f32> = json_records
-                        .iter()
-                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_f64()).map(|v| v as f32))
-                        .collect();
-                    if writer.write_batch(&values, None, None).is_err() {
+                    let mut values: Vec<f32> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_f64()).map(|v| v as f32) {
+                            values.push(val);
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(0.0);
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing float column"));
                     }
                     if writer.close().is_err() {
@@ -274,11 +327,23 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
             }
             ParquetPrimitiveType::Double => {
                 if let ColumnWriter::DoubleColumnWriter(mut writer) = col_writer {
-                    let values: Vec<f64> = json_records
-                        .iter()
-                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_f64()))
-                        .collect();
-                    if writer.write_batch(&values, None, None).is_err() {
+                    let mut values: Vec<f64> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_f64()) {
+                            values.push(val);
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(0.0);
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing double column"));
                     }
                     if writer.close().is_err() {
@@ -288,15 +353,23 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
             }
             ParquetPrimitiveType::ByteArray | ParquetPrimitiveType::Binary => {
                 if let ColumnWriter::ByteArrayColumnWriter(mut writer) = col_writer {
-                    let values: Vec<ByteArray> = json_records
-                        .iter()
-                        .filter_map(|record| {
-                            record.get(&field.name)
-                                .and_then(|v| v.as_str())
-                                .map(|s| ByteArray::from(s.as_bytes()))
-                        })
-                        .collect();
-                    if writer.write_batch(&values, None, None).is_err() {
+                    let mut values: Vec<ByteArray> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_str()) {
+                            values.push(ByteArray::from(val.as_bytes()));
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(ByteArray::from(&[] as &[u8]));
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
                         return Err(JsValue::from_str("Error writing byte array column"));
                     }
                     if writer.close().is_err() {
