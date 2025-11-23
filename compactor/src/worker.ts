@@ -39,7 +39,7 @@ const getSchema = async (env: Env): Promise<ValueResult<ParquetSchema>> => {
 };
 
 const getFiles = async (env: Env): Promise<ValueResult<string[]>> => {
-  const files = await env.LAKESIDE_BUCKET.list({ prefix: 'json/' });
+  const files = await env.LAKESIDE_BUCKET.list({ prefix: 'data/' });
   if (!files) {
     return {
       success: false,
@@ -65,8 +65,7 @@ const getFiles = async (env: Env): Promise<ValueResult<string[]>> => {
   }
 
   const fileJSONs = (fileTexts as string[]).map(SafeJSONParse);
-  const fileJSONResults = await Promise.all(fileJSONs);
-  const fileJSONErrors = fileJSONResults.filter((r) => !r.success);
+  const fileJSONErrors = fileJSONs.filter((r) => !r.success);
   if (fileJSONErrors.length > 0) {
     return {
       success: false,
@@ -76,8 +75,8 @@ const getFiles = async (env: Env): Promise<ValueResult<string[]>> => {
     };
   }
 
-  const fileJSONValues = fileJSONResults.map((r) =>
-    r.success ? r.value : undefined).filter((v) => v !== undefined) as string[];
+  const fileJSONValues = fileJSONs.map((r) =>
+    r.success ? JSON.stringify(r.value) : undefined).filter((v) => v !== undefined) as string[];
   return {
     success: true,
     value: fileJSONValues,
@@ -97,16 +96,31 @@ export default {
         if (!filesResult.success) {
           return ErrorsToResponse(filesResult.errors);
         }
+
+        // Get list of files before compaction for cleanup
+        const filesList = await env.LAKESIDE_BUCKET.list({ prefix: 'data/' });
+        const fileKeys = filesList.objects.map(obj => obj.key);
+
+        // Generate parquet file with timestamp
         const parquetFile = generateParquet(JSON.stringify(schemaResult.value), filesResult.value);
-        const putRes = await env.LAKESIDE_BUCKET.put('parquet/parquet.parquet', parquetFile);
+        const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+        const parquetKey = `parquet/data-${timestamp}.parquet`;
+
+        const putRes = await env.LAKESIDE_BUCKET.put(parquetKey, parquetFile);
         if (!putRes) {
-          return new Response('', { status: 500 });
+          return new Response('Failed to write parquet file', { status: 500 });
         }
-        return new Response('OK');
+
+        // Cleanup: delete the original JSON files after successful compaction
+        const deletePromises = fileKeys.map(key => env.LAKESIDE_BUCKET.delete(key));
+        await Promise.all(deletePromises);
+
+        return new Response(`OK - Created ${parquetKey} and deleted ${fileKeys.length} JSON files`);
       }
       return new Response('', { status: 405 });
     } catch (e) {
-      return new Response('failed to process request', { status: 500 });
+      console.error('Error processing request:', e);
+      return new Response(`Failed to process request: ${e instanceof Error ? e.message : String(e)}`, { status: 500 });
     }
   },
 };

@@ -49,7 +49,8 @@ export default {
       }
       return new Response('', { status: 405 });
     } catch (e) {
-      return new Response('failed to process request', { status: 500 });
+      console.error('Error processing request:', e);
+      return new Response(`Failed to process request: ${e instanceof Error ? e.message : String(e)}`, { status: 500 });
     }
   },
 };

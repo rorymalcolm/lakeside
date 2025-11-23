@@ -2,15 +2,10 @@ import { v4 } from 'uuid';
 import { validateJSONAgainstSchema } from 'parquet-schema-validator';
 import { ParquetSchema } from 'parquet-types';
 import { ValueResult, ErrorsToResponse, SafeJSONParse } from 'rerrors';
-import { z } from 'zod';
 
 export interface Env {
   LAKESIDE_BUCKET: R2Bucket;
 }
-
-const AppendBody = z.string({});
-
-type AppendBody = z.infer<typeof AppendBody>;
 
 const getSchema = async (env: Env): Promise<ValueResult<ParquetSchema>> => {
   const schema = await env.LAKESIDE_BUCKET.get(`schema/schema.json`);
@@ -55,12 +50,7 @@ export default {
       if (request.method === 'PUT') {
         const json = await request.json();
 
-        const validJson = AppendBody.safeParse(json);
-        if (!validJson.success) {
-          return new Response(JSON.stringify(validJson.error), { status: 400 });
-        }
-
-        const validated = validateJSONAgainstSchema(validJson.data, schemaResult.value);
+        const validated = validateJSONAgainstSchema(json, schemaResult.value);
         if (!validated.success) {
           return new Response(JSON.stringify(validated.errors), { status: 400 });
         }
@@ -76,7 +66,8 @@ export default {
       }
       return new Response('', { status: 405 });
     } catch (e) {
-      return new Response('failed to process request', { status: 500 });
+      console.error('Error processing request:', e);
+      return new Response(`Failed to process request: ${e instanceof Error ? e.message : String(e)}`, { status: 500 });
     }
   },
 };

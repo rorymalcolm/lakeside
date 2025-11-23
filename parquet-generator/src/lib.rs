@@ -2,10 +2,14 @@ use parquet::basic::{ConvertedType, Repetition, Type as PhysicalType};
 use parquet::schema::printer;
 use parquet::schema::types::Type;
 use parquet::{file::writer::SerializedFileWriter, schema::parser::parse_message_type};
+use parquet::column::writer::ColumnWriter;
+use parquet::data_type::{BoolType, Int32Type, Int64Type, FloatType, DoubleType, ByteArrayType};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
+use parquet::data_type::ByteArray;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ParquetSchema {
@@ -28,6 +32,7 @@ enum ParquetPrimitiveType {
     Int32,
     Int64,
     Int96,
+    Float,
     Binary,
     Double,
     ByteArray,
@@ -102,6 +107,7 @@ fn physical_type_matcher(parquet_primitive_type: ParquetPrimitiveType) -> Physic
         ParquetPrimitiveType::Int32 => PhysicalType::INT32,
         ParquetPrimitiveType::Int64 => PhysicalType::INT64,
         ParquetPrimitiveType::Int96 => PhysicalType::INT96,
+        ParquetPrimitiveType::Float => PhysicalType::FLOAT,
         ParquetPrimitiveType::Binary => PhysicalType::BYTE_ARRAY,
         ParquetPrimitiveType::Double => PhysicalType::DOUBLE,
         ParquetPrimitiveType::ByteArray => PhysicalType::BYTE_ARRAY,
@@ -166,18 +172,32 @@ fn build_schema(schema: String) -> String {
 ///
 /// ```
 #[wasm_bindgen]
-pub fn generate_parquet(schema: String, files: Vec<String>) -> Result<Clamped<Vec<u8>>, JsValue> {
-    let message_type = build_schema(schema);
+pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clamped<Vec<u8>>, JsValue> {
+    let message_type = build_schema(schema_str.clone());
     let parsed_schema = parse_message_type(message_type.as_str());
+
+    let parquet_schema_obj = match serde_json::from_str::<ParquetSchema>(schema_str.as_str()) {
+        Ok(s) => s,
+        Err(_) => return Err(JsValue::from_str("Error parsing schema JSON")),
+    };
 
     let schema = match parsed_schema {
         Ok(s) => Arc::new(s),
         Err(_) => return Err(JsValue::from_str("Error parsing schema")),
     };
 
+    // Parse all JSON files
+    let mut json_records: Vec<Value> = Vec::new();
+    for file in &files {
+        match serde_json::from_str::<Value>(file) {
+            Ok(json) => json_records.push(json),
+            Err(_) => return Err(JsValue::from_str("Error parsing JSON file")),
+        }
+    }
+
     let buffer = vec![];
 
-    let mut writer = match SerializedFileWriter::new(buffer, schema, Default::default()) {
+    let mut writer = match SerializedFileWriter::new(buffer, schema.clone(), Default::default()) {
         Ok(w) => w,
         Err(_) => return Err(JsValue::from_str("Error creating writer")),
     };
@@ -187,9 +207,108 @@ pub fn generate_parquet(schema: String, files: Vec<String>) -> Result<Clamped<Ve
         Err(_) => return Err(JsValue::from_str("Error creating row group writer")),
     };
 
-    while let Ok(Some(col_writer)) = row_group_writer.next_column() {
-        if col_writer.close().is_err() {
-            return Err(JsValue::from_str("Error closing column writer"));
+    // Write data column by column
+    for field in &parquet_schema_obj.fields {
+        let col_writer = match row_group_writer.next_column() {
+            Ok(Some(writer)) => writer,
+            Ok(None) => break,
+            Err(_) => return Err(JsValue::from_str("Error getting column writer")),
+        };
+
+        match field.primitive_type {
+            ParquetPrimitiveType::Boolean => {
+                if let ColumnWriter::BoolColumnWriter(mut writer) = col_writer {
+                    let values: Vec<bool> = json_records
+                        .iter()
+                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_bool()))
+                        .collect();
+                    if writer.write_batch(&values, None, None).is_err() {
+                        return Err(JsValue::from_str("Error writing boolean column"));
+                    }
+                    if writer.close().is_err() {
+                        return Err(JsValue::from_str("Error closing boolean column writer"));
+                    }
+                }
+            }
+            ParquetPrimitiveType::Int32 => {
+                if let ColumnWriter::Int32ColumnWriter(mut writer) = col_writer {
+                    let values: Vec<i32> = json_records
+                        .iter()
+                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_i64()).map(|v| v as i32))
+                        .collect();
+                    if writer.write_batch(&values, None, None).is_err() {
+                        return Err(JsValue::from_str("Error writing int32 column"));
+                    }
+                    if writer.close().is_err() {
+                        return Err(JsValue::from_str("Error closing int32 column writer"));
+                    }
+                }
+            }
+            ParquetPrimitiveType::Int64 => {
+                if let ColumnWriter::Int64ColumnWriter(mut writer) = col_writer {
+                    let values: Vec<i64> = json_records
+                        .iter()
+                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_i64()))
+                        .collect();
+                    if writer.write_batch(&values, None, None).is_err() {
+                        return Err(JsValue::from_str("Error writing int64 column"));
+                    }
+                    if writer.close().is_err() {
+                        return Err(JsValue::from_str("Error closing int64 column writer"));
+                    }
+                }
+            }
+            ParquetPrimitiveType::Float => {
+                if let ColumnWriter::FloatColumnWriter(mut writer) = col_writer {
+                    let values: Vec<f32> = json_records
+                        .iter()
+                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_f64()).map(|v| v as f32))
+                        .collect();
+                    if writer.write_batch(&values, None, None).is_err() {
+                        return Err(JsValue::from_str("Error writing float column"));
+                    }
+                    if writer.close().is_err() {
+                        return Err(JsValue::from_str("Error closing float column writer"));
+                    }
+                }
+            }
+            ParquetPrimitiveType::Double => {
+                if let ColumnWriter::DoubleColumnWriter(mut writer) = col_writer {
+                    let values: Vec<f64> = json_records
+                        .iter()
+                        .filter_map(|record| record.get(&field.name).and_then(|v| v.as_f64()))
+                        .collect();
+                    if writer.write_batch(&values, None, None).is_err() {
+                        return Err(JsValue::from_str("Error writing double column"));
+                    }
+                    if writer.close().is_err() {
+                        return Err(JsValue::from_str("Error closing double column writer"));
+                    }
+                }
+            }
+            ParquetPrimitiveType::ByteArray | ParquetPrimitiveType::Binary => {
+                if let ColumnWriter::ByteArrayColumnWriter(mut writer) = col_writer {
+                    let values: Vec<ByteArray> = json_records
+                        .iter()
+                        .filter_map(|record| {
+                            record.get(&field.name)
+                                .and_then(|v| v.as_str())
+                                .map(|s| ByteArray::from(s.as_bytes()))
+                        })
+                        .collect();
+                    if writer.write_batch(&values, None, None).is_err() {
+                        return Err(JsValue::from_str("Error writing byte array column"));
+                    }
+                    if writer.close().is_err() {
+                        return Err(JsValue::from_str("Error closing byte array column writer"));
+                    }
+                }
+            }
+            _ => {
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing unsupported column writer"));
+                }
+            }
         }
     }
 
