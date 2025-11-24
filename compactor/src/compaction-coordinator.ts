@@ -1,5 +1,4 @@
-import { DurableObject } from 'cloudflare:workers';
-
+// Durable Object for distributed compaction locking
 interface CompactionState {
   isCompacting: boolean;
   currentBatch?: string[];
@@ -10,13 +9,17 @@ interface CompactionState {
  * CompactionCoordinator ensures only one compaction runs at a time
  * across all worker instances using Durable Objects for distributed locking.
  */
-export class CompactionCoordinator extends DurableObject {
+export class CompactionCoordinator implements DurableObject {
   private state: CompactionState = {
     isCompacting: false,
   };
 
+  private ctx: DurableObjectState;
+  private env: unknown;
+
   constructor(ctx: DurableObjectState, env: unknown) {
-    super(ctx, env);
+    this.ctx = ctx;
+    this.env = env;
     this.ctx.blockConcurrencyWhile(async () => {
       const stored = await this.ctx.storage.get<CompactionState>('state');
       if (stored) {

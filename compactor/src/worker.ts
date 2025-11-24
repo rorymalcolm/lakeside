@@ -141,9 +141,12 @@ async function processPartition(
   const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
   const parquetKey = `parquet/${partitionKey}/part-${timestamp}.parquet`;
 
+  // Convert Uint8ClampedArray to Uint8Array for R2 compatibility
+  const parquetBuffer = new Uint8Array(parquetFile);
+
   const addedFiles: FileAction[] = [{
     path: parquetKey,
-    size: parquetFile.byteLength,
+    size: parquetBuffer.byteLength,
     rowCount: allRecords.length,
     partition: partitionKey,
   }];
@@ -154,7 +157,7 @@ async function processPartition(
     addedFiles,
     removedFiles,
     rowCount: allRecords.length,
-    parquetBuffer: parquetFile,
+    parquetBuffer: parquetBuffer,
     parquetKey,
   };
 }
