@@ -80,7 +80,7 @@ export async function getNextVersion(bucket: R2Bucket): Promise<number> {
 }
 
 /**
- * Append a transaction to the log (atomic write)
+ * Append a transaction to the log (atomic write with conditional put)
  */
 export async function appendTransaction(
   bucket: R2Bucket,
@@ -95,11 +95,23 @@ export async function appendTransaction(
 
   const key = `_lakeside_log/${version.toString().padStart(8, '0')}.json`;
 
-  await bucket.put(key, JSON.stringify(entry, null, 2), {
-    httpMetadata: {
-      contentType: 'application/json',
-    },
-  });
+  // Use conditional write to prevent concurrent writes creating duplicate versions
+  try {
+    await bucket.put(key, JSON.stringify(entry, null, 2), {
+      httpMetadata: {
+        contentType: 'application/json',
+      },
+      onlyIf: {
+        // Only write if file doesn't exist (etagDoesNotMatch: '*' means "no ETag exists")
+        etagDoesNotMatch: '*',
+      },
+    });
+  } catch (error) {
+    // If conditional write fails, another compaction wrote this version
+    // Retry with next version number
+    console.warn(`Version conflict at ${version}, retrying...`);
+    return appendTransaction(bucket, transaction);
+  }
 
   return version;
 }

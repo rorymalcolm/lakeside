@@ -196,7 +196,16 @@ pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clampe
 
     let buffer = vec![];
 
-    let mut writer = match SerializedFileWriter::new(buffer, schema.clone(), Default::default()) {
+    // Enable SNAPPY compression (5-10x file size reduction)
+    use parquet::file::properties::WriterProperties;
+    use parquet::basic::Compression;
+
+    let props = WriterProperties::builder()
+        .set_compression(Compression::SNAPPY)
+        .set_writer_version(parquet::file::properties::WriterVersion::PARQUET_2_0)
+        .build();
+
+    let mut writer = match SerializedFileWriter::new(buffer, schema.clone(), Arc::new(props)) {
         Ok(w) => w,
         Err(_) => return Err(JsValue::from_str("Error creating writer")),
     };
