@@ -2,15 +2,20 @@ name = "compactor"
 main = "src/worker.ts"
 compatibility_date = "2023-10-02"
 
+[[migrations]]
+tag = "v1"
+new_classes = ["CompactionCoordinator"]
+
 # # KV Namespace binding - For more information: https://developers.cloudflare.com/workers/runtime-apis/kv
 # [[kv_namespaces]]
 # binding = "MY_KV_NAMESPACE"
 # id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-# # Durable Object binding - For more information: https://developers.cloudflare.com/workers/runtime-apis/durable-objects
-# [[durable_objects]]
-# binding = "MY_DURABLE_OBJECT"
-# class_name = "MyDurableObject"
+# Durable Object binding - For more information: https://developers.cloudflare.com/workers/runtime-apis/durable-objects
+[[durable_objects.bindings]]
+name = "COMPACTION_COORDINATOR"
+class_name = "CompactionCoordinator"
+script_name = "compactor"
 
 # # Bucket binding - For more information: https://developers.cloudflare.com/workers/runtime-apis/kv#bucket
 [[r2_buckets]]

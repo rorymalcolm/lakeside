@@ -2,10 +2,13 @@ use parquet::basic::{ConvertedType, Repetition, Type as PhysicalType};
 use parquet::schema::printer;
 use parquet::schema::types::Type;
 use parquet::{file::writer::SerializedFileWriter, schema::parser::parse_message_type};
+use parquet::column::writer::ColumnWriter;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
+use parquet::data_type::ByteArray;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ParquetSchema {
@@ -28,6 +31,7 @@ enum ParquetPrimitiveType {
     Int32,
     Int64,
     Int96,
+    Float,
     Binary,
     Double,
     ByteArray,
@@ -102,6 +106,7 @@ fn physical_type_matcher(parquet_primitive_type: ParquetPrimitiveType) -> Physic
         ParquetPrimitiveType::Int32 => PhysicalType::INT32,
         ParquetPrimitiveType::Int64 => PhysicalType::INT64,
         ParquetPrimitiveType::Int96 => PhysicalType::INT96,
+        ParquetPrimitiveType::Float => PhysicalType::FLOAT,
         ParquetPrimitiveType::Binary => PhysicalType::BYTE_ARRAY,
         ParquetPrimitiveType::Double => PhysicalType::DOUBLE,
         ParquetPrimitiveType::ByteArray => PhysicalType::BYTE_ARRAY,
@@ -166,18 +171,41 @@ fn build_schema(schema: String) -> String {
 ///
 /// ```
 #[wasm_bindgen]
-pub fn generate_parquet(schema: String, files: Vec<String>) -> Result<Clamped<Vec<u8>>, JsValue> {
-    let message_type = build_schema(schema);
+pub fn generate_parquet(schema_str: String, files: Vec<String>) -> Result<Clamped<Vec<u8>>, JsValue> {
+    let message_type = build_schema(schema_str.clone());
     let parsed_schema = parse_message_type(message_type.as_str());
+
+    let parquet_schema_obj = match serde_json::from_str::<ParquetSchema>(schema_str.as_str()) {
+        Ok(s) => s,
+        Err(_) => return Err(JsValue::from_str("Error parsing schema JSON")),
+    };
 
     let schema = match parsed_schema {
         Ok(s) => Arc::new(s),
         Err(_) => return Err(JsValue::from_str("Error parsing schema")),
     };
 
+    // Parse all JSON files
+    let mut json_records: Vec<Value> = Vec::new();
+    for file in &files {
+        match serde_json::from_str::<Value>(file) {
+            Ok(json) => json_records.push(json),
+            Err(_) => return Err(JsValue::from_str("Error parsing JSON file")),
+        }
+    }
+
     let buffer = vec![];
 
-    let mut writer = match SerializedFileWriter::new(buffer, schema, Default::default()) {
+    // Enable SNAPPY compression (5-10x file size reduction)
+    use parquet::file::properties::WriterProperties;
+    use parquet::basic::Compression;
+
+    let props = WriterProperties::builder()
+        .set_compression(Compression::SNAPPY)
+        .set_writer_version(parquet::file::properties::WriterVersion::PARQUET_2_0)
+        .build();
+
+    let mut writer = match SerializedFileWriter::new(buffer, schema.clone(), Arc::new(props)) {
         Ok(w) => w,
         Err(_) => return Err(JsValue::from_str("Error creating writer")),
     };
@@ -187,9 +215,179 @@ pub fn generate_parquet(schema: String, files: Vec<String>) -> Result<Clamped<Ve
         Err(_) => return Err(JsValue::from_str("Error creating row group writer")),
     };
 
-    while let Ok(Some(col_writer)) = row_group_writer.next_column() {
-        if col_writer.close().is_err() {
-            return Err(JsValue::from_str("Error closing column writer"));
+    // Write data column by column
+    for field in &parquet_schema_obj.fields {
+        let mut col_writer = match row_group_writer.next_column() {
+            Ok(Some(writer)) => writer,
+            Ok(None) => break,
+            Err(_) => return Err(JsValue::from_str("Error getting column writer")),
+        };
+
+        // Determine if field is optional (needs definition levels)
+        let is_optional = matches!(field.repetition_type, Some(ParquetRepetition::Optional));
+
+        match field.primitive_type {
+            ParquetPrimitiveType::Boolean => {
+                if let ColumnWriter::BoolColumnWriter(ref mut writer) = col_writer.untyped() {
+                    let mut values: Vec<bool> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_bool()) {
+                            values.push(val);
+                            def_levels.push(1); // Value is present
+                        } else if is_optional {
+                            values.push(false); // Placeholder for null
+                            def_levels.push(0); // Value is null
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
+                        return Err(JsValue::from_str("Error writing boolean column"));
+                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing boolean column writer"));
+                }
+            }
+            ParquetPrimitiveType::Int32 => {
+                if let ColumnWriter::Int32ColumnWriter(ref mut writer) = col_writer.untyped() {
+                    let mut values: Vec<i32> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_i64()).map(|v| v as i32) {
+                            values.push(val);
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(0);
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
+                        return Err(JsValue::from_str("Error writing int32 column"));
+                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing int32 column writer"));
+                }
+            }
+            ParquetPrimitiveType::Int64 => {
+                if let ColumnWriter::Int64ColumnWriter(ref mut writer) = col_writer.untyped() {
+                    let mut values: Vec<i64> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_i64()) {
+                            values.push(val);
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(0);
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
+                        return Err(JsValue::from_str("Error writing int64 column"));
+                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing int64 column writer"));
+                }
+            }
+            ParquetPrimitiveType::Float => {
+                if let ColumnWriter::FloatColumnWriter(ref mut writer) = col_writer.untyped() {
+                    let mut values: Vec<f32> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_f64()).map(|v| v as f32) {
+                            values.push(val);
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(0.0);
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
+                        return Err(JsValue::from_str("Error writing float column"));
+                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing float column writer"));
+                }
+            }
+            ParquetPrimitiveType::Double => {
+                if let ColumnWriter::DoubleColumnWriter(ref mut writer) = col_writer.untyped() {
+                    let mut values: Vec<f64> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_f64()) {
+                            values.push(val);
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(0.0);
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
+                        return Err(JsValue::from_str("Error writing double column"));
+                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing double column writer"));
+                }
+            }
+            ParquetPrimitiveType::ByteArray | ParquetPrimitiveType::Binary => {
+                if let ColumnWriter::ByteArrayColumnWriter(ref mut writer) = col_writer.untyped() {
+                    let mut values: Vec<ByteArray> = Vec::new();
+                    let mut def_levels: Vec<i16> = Vec::new();
+
+                    for record in &json_records {
+                        if let Some(val) = record.get(&field.name).and_then(|v| v.as_str()) {
+                            values.push(ByteArray::from(val.as_bytes()));
+                            def_levels.push(1);
+                        } else if is_optional {
+                            values.push(ByteArray::from(&[] as &[u8]));
+                            def_levels.push(0);
+                        } else {
+                            return Err(JsValue::from_str(&format!("Required field {} is missing", field.name)));
+                        }
+                    }
+
+                    let def_opt = if is_optional { Some(def_levels.as_slice()) } else { None };
+                    if writer.write_batch(&values, def_opt, None).is_err() {
+                        return Err(JsValue::from_str("Error writing byte array column"));
+                    }
+                }
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing byte array column writer"));
+                }
+            }
+            _ => {
+                if col_writer.close().is_err() {
+                    return Err(JsValue::from_str("Error closing unsupported column writer"));
+                }
+            }
         }
     }
 
@@ -197,10 +395,10 @@ pub fn generate_parquet(schema: String, files: Vec<String>) -> Result<Clamped<Ve
         return Err(JsValue::from_str("Error closing row group writer"));
     }
 
-    return match writer.into_inner() {
+    match writer.into_inner() {
         Ok(bytes_buffer) => Ok(Clamped(bytes_buffer)),
         Err(_) => Err(JsValue::from_str("Error closing writer")),
-    };
+    }
 }
 
 #[test]

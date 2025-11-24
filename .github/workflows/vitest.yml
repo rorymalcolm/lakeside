@@ -10,11 +10,25 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v4.0.1
+
+      # Install Rust for building WASM
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # Install wasm-pack
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
           version: 'latest'
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v4.0.1
+
+      # Build WASM package BEFORE yarn install (required for workspace)
+      - name: Build WASM package
+        run: wasm-pack build parquet-generator/ --out-dir ./pkg --target web
+
+      # Now install dependencies (parquet-generator/pkg exists)
       - run: yarn
-      - run: yarn build
+
+      # Run tests
       - run: yarn test
